@@ -10,6 +10,7 @@ A macOS Messages.app CLI to send, read, and stream iMessage/SMS (with attachment
 - Filters: participants, start/end time, JSON output for tooling.
 - Read-only DB access (`mode=ro`), no DB writes.
 - Event-driven watch via filesystem events.
+- Optional advanced IMCore features (`typing`, `launch`, `status`) behind explicit SIP-off setup.
 
 ## Requirements
 - macOS 14+ with Messages.app signed in.
@@ -28,6 +29,10 @@ make build
 - `imsg history --chat-id <id> [--limit 50] [--attachments] [--participants +15551234567,...] [--start 2025-01-01T00:00:00Z] [--end 2025-02-01T00:00:00Z] [--json]`
 - `imsg watch [--chat-id <id>] [--since-rowid <n>] [--debounce 250ms] [--attachments] [--participants …] [--start …] [--end …] [--json]`
 - `imsg send --to <handle> [--text "hi"] [--file /path/img.jpg] [--service imessage|sms|auto] [--region US]`
+- `imsg read --to <handle> [--chat-id <id> | --chat-identifier <id> | --chat-guid <guid>]`
+- `imsg typing --to <handle> [--duration 5s] [--stop true] [--service imessage|sms|auto]`
+- `imsg status [--json]` — advanced feature and SIP status
+- `imsg launch [--dylib <path>] [--kill-only] [--json]`
 
 ### Quick samples
 ```
@@ -48,6 +53,18 @@ imsg watch --chat-id 1 --attachments --debounce 250ms
 
 # send a picture
 imsg send --to "+14155551212" --text "hi" --file ~/Desktop/pic.jpg --service imessage
+
+# mark a chat as read
+imsg read --to "+14155551212"
+
+# advanced status check
+imsg status
+
+# launch Messages with injection (SIP must be disabled first)
+imsg launch
+
+# show typing indicator for 5s
+imsg typing --to "+14155551212" --duration 5s
 ```
 
 ## Attachment notes
@@ -64,6 +81,23 @@ If you see “unable to open database file” or empty output:
 1) Grant Full Disk Access: System Settings → Privacy & Security → Full Disk Access → add your terminal.
 2) Ensure Messages.app is signed in and `~/Library/Messages/chat.db` exists.
 3) For send, allow the terminal under System Settings → Privacy & Security → Automation → Messages.
+
+## Advanced Features (SIP-Off Only)
+Advanced features (`typing`, `launch`, IMCore bridge) require injecting a helper dylib into `Messages.app`.
+
+Important:
+- This is opt-in only. Default send/history/watch flows do not need injection.
+- `imsg launch` refuses to inject when SIP is enabled.
+- `imsg status` is read-only and does not auto-launch or auto-inject.
+
+Setup:
+1) Disable SIP from Recovery mode: `csrutil disable`
+2) Grant Full Disk Access to your terminal
+3) Build helper dylib: `make build-dylib`
+4) Launch with injection: `imsg launch`
+5) Verify: `imsg status`
+
+To revert after testing, re-enable SIP in Recovery mode: `csrutil enable`.
 
 ## Testing
 ```bash

@@ -57,4 +57,16 @@ enum ChatTargetResolver {
       chatGUID: resolvedGUID
     )
   }
+
+  static func directTypingIdentifier(
+    recipient: String,
+    serviceRaw: String,
+    invalidServiceError: (String) -> Error
+  ) throws -> String {
+    guard let service = MessageService(rawValue: serviceRaw.lowercased()) else {
+      throw invalidServiceError(serviceRaw)
+    }
+    let prefix = service == .sms ? "SMS" : "iMessage"
+    return "\(prefix);-;\(recipient)"
+  }
 }
