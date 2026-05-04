@@ -19,6 +19,15 @@ A macOS Messages.app CLI to send, read, and stream iMessage/SMS (with attachment
 - For SMS relay, enable “Text Message Forwarding” on your iPhone to this Mac.
 
 ## Install
+
+### Homebrew
+
+```bash
+brew install steipete/tap/imsg
+```
+
+### Build from source
+
 ```bash
 make build
 # binary at ./bin/imsg
