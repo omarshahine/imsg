@@ -21,6 +21,7 @@ public final class MessageStore: @unchecked Sendable {
   let hasAudioMessageColumn: Bool
   let hasAttachmentUserInfo: Bool
   let hasBalloonBundleIDColumn: Bool
+  let hasChatMessageJoinMessageDateColumn: Bool
 
   private struct URLBalloonDedupeEntry: Sendable {
     let rowID: Int64
@@ -47,6 +48,10 @@ public final class MessageStore: @unchecked Sendable {
         connection: self.connection,
         table: "attachment"
       )
+      let chatMessageJoinColumns = MessageStore.tableColumns(
+        connection: self.connection,
+        table: "chat_message_join"
+      )
       self.hasAttributedBody = messageColumns.contains("attributedbody")
       self.hasReactionColumns = MessageStore.reactionColumnsPresent(in: messageColumns)
       self.hasThreadOriginatorGUIDColumn = messageColumns.contains("thread_originator_guid")
@@ -54,6 +59,7 @@ public final class MessageStore: @unchecked Sendable {
       self.hasAudioMessageColumn = messageColumns.contains("is_audio_message")
       self.hasAttachmentUserInfo = attachmentColumns.contains("user_info")
       self.hasBalloonBundleIDColumn = messageColumns.contains("balloon_bundle_id")
+      self.hasChatMessageJoinMessageDateColumn = chatMessageJoinColumns.contains("message_date")
     } catch {
       throw MessageStore.enhance(error: error, path: normalized)
     }
@@ -68,7 +74,8 @@ public final class MessageStore: @unchecked Sendable {
     hasDestinationCallerID: Bool? = nil,
     hasAudioMessageColumn: Bool? = nil,
     hasAttachmentUserInfo: Bool? = nil,
-    hasBalloonBundleIDColumn: Bool? = nil
+    hasBalloonBundleIDColumn: Bool? = nil,
+    hasChatMessageJoinMessageDateColumn: Bool? = nil
   ) throws {
     self.path = path
     self.queue = DispatchQueue(label: "imsg.db.test", qos: .userInitiated)
@@ -77,6 +84,10 @@ public final class MessageStore: @unchecked Sendable {
     self.connection.busyTimeout = 5
     let messageColumns = MessageStore.tableColumns(connection: connection, table: "message")
     let attachmentColumns = MessageStore.tableColumns(connection: connection, table: "attachment")
+    let chatMessageJoinColumns = MessageStore.tableColumns(
+      connection: connection,
+      table: "chat_message_join"
+    )
     if let hasAttributedBody {
       self.hasAttributedBody = hasAttributedBody
     } else {
@@ -112,19 +123,37 @@ public final class MessageStore: @unchecked Sendable {
     } else {
       self.hasBalloonBundleIDColumn = messageColumns.contains("balloon_bundle_id")
     }
+    if let hasChatMessageJoinMessageDateColumn {
+      self.hasChatMessageJoinMessageDateColumn = hasChatMessageJoinMessageDateColumn
+    } else {
+      self.hasChatMessageJoinMessageDateColumn = chatMessageJoinColumns.contains("message_date")
+    }
   }
 
   public func listChats(limit: Int) throws -> [Chat] {
-    let sql = """
-      SELECT c.ROWID, IFNULL(c.display_name, c.chat_identifier) AS name, c.chat_identifier, c.service_name,
-             MAX(m.date) AS last_date
-      FROM chat c
-      JOIN chat_message_join cmj ON c.ROWID = cmj.chat_id
-      JOIN message m ON m.ROWID = cmj.message_id
-      GROUP BY c.ROWID
-      ORDER BY last_date DESC
-      LIMIT ?
-      """
+    let sql: String
+    if hasChatMessageJoinMessageDateColumn {
+      sql = """
+        SELECT c.ROWID, IFNULL(c.display_name, c.chat_identifier) AS name, c.chat_identifier,
+               c.service_name, MAX(cmj.message_date) AS last_date
+        FROM chat c
+        JOIN chat_message_join cmj ON c.ROWID = cmj.chat_id
+        GROUP BY c.ROWID
+        ORDER BY last_date DESC
+        LIMIT ?
+        """
+    } else {
+      sql = """
+        SELECT c.ROWID, IFNULL(c.display_name, c.chat_identifier) AS name, c.chat_identifier,
+               c.service_name, MAX(m.date) AS last_date
+        FROM chat c
+        JOIN chat_message_join cmj ON c.ROWID = cmj.chat_id
+        JOIN message m ON m.ROWID = cmj.message_id
+        GROUP BY c.ROWID
+        ORDER BY last_date DESC
+        LIMIT ?
+        """
+    }
     return try withConnection { db in
       var chats: [Chat] = []
       for row in try db.prepare(sql, limit) {

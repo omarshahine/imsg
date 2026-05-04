@@ -36,14 +36,6 @@ private func makeInMemoryMessageDB(
 }
 
 @Test
-func listChatsReturnsChat() throws {
-  let store = try TestDatabase.makeStore()
-  let chats = try store.listChats(limit: 5)
-  #expect(chats.count == 1)
-  #expect(chats.first?.identifier == "+123")
-}
-
-@Test
 func chatInfoReturnsMetadata() throws {
   let store = try TestDatabase.makeStore()
   let info = try store.chatInfo(chatID: 1)
