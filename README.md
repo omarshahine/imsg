@@ -46,6 +46,7 @@ make build
 - `imsg read --to <handle> [--chat-id <id> | --chat-identifier <id> | --chat-guid <guid>]`
 - `imsg typing --to <handle> [--duration 5s] [--stop true] [--service imessage|sms|auto]`
 - `imsg status [--json]` — advanced feature and SIP status
+- `imsg completions bash|zsh|fish|llm` — generate shell completions or a Markdown CLI reference
 - `imsg launch [--dylib <path>] [--kill-only] [--json]`
 
 ### Quick samples

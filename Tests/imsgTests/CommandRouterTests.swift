@@ -38,3 +38,56 @@ func commandRouterIncludesGroupCommand() {
   let router = CommandRouter()
   #expect(router.specs.contains { $0.name == "group" })
 }
+
+@Test
+func commandRouterIncludesCompletionsCommand() {
+  let router = CommandRouter()
+  #expect(router.specs.contains { $0.name == "completions" })
+}
+
+@Test
+func completionsGenerateAllFormats() throws {
+  let specs = CommandRouter().specs
+  let bash = try CompletionGenerator.generate(shell: "bash", rootName: "imsg", specs: specs)
+  let zsh = try CompletionGenerator.generate(shell: "zsh", rootName: "imsg", specs: specs)
+  let fish = try CompletionGenerator.generate(shell: "fish", rootName: "imsg", specs: specs)
+  let llm = try CompletionGenerator.generate(shell: "llm", rootName: "imsg", specs: specs)
+
+  #expect(bash.contains("complete -F _imsg imsg"))
+  #expect(zsh.contains("#compdef imsg"))
+  #expect(fish.contains("complete -c imsg"))
+  #expect(llm.contains("# imsg CLI Reference"))
+}
+
+@Test
+func completionsIncludeCurrentCommandsAndOptions() throws {
+  let specs = CommandRouter().specs
+  let output = try CompletionGenerator.generate(shell: "llm", rootName: "imsg", specs: specs)
+  for spec in specs {
+    #expect(output.contains("### \(spec.name)"))
+  }
+  #expect(output.contains("--convert-attachments"))
+  #expect(output.contains("--reaction, -r <value>"))
+}
+
+@Test
+func completionsRejectUnknownShell() {
+  do {
+    _ = try CompletionGenerator.generate(shell: "powershell", rootName: "imsg", specs: [])
+    #expect(Bool(false))
+  } catch let error as CompletionError {
+    #expect(error.description.contains("Unknown shell"))
+  } catch {
+    #expect(Bool(false))
+  }
+}
+
+@Test
+func completionsCommandRunsThroughRouter() async {
+  let router = CommandRouter()
+  let (output, status) = await StdoutCapture.capture {
+    await router.run(argv: ["imsg", "completions", "fish"])
+  }
+  #expect(status == 0)
+  #expect(output.contains("complete -c imsg"))
+}
