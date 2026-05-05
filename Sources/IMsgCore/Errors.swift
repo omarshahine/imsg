@@ -8,6 +8,7 @@ public enum IMsgError: LocalizedError, Sendable {
   case appleScriptFailure(String)
   case typingIndicatorFailed(String)
   case invalidReaction(String)
+  case unsupportedReaction(String)
   case chatNotFound(chatID: Int64)
 
   public var errorDescription: String? {
@@ -45,8 +46,9 @@ public enum IMsgError: LocalizedError, Sendable {
         Invalid reaction: \(value)
 
         Valid reactions: love, like, dislike, laugh, emphasis, question
-        Or use an emoji for custom reactions (e.g., 🎉)
         """
+    case .unsupportedReaction(let message):
+      return "Unsupported reaction: \(message)"
     case .chatNotFound(let chatID):
       return "Chat not found: \(chatID)"
     }

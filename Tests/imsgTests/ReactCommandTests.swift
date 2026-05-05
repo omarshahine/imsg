@@ -60,7 +60,7 @@ func reactCommandBuildsParameterizedAppleScriptForStandardTapback() async throws
 }
 
 @Test
-func reactCommandBuildsParameterizedAppleScriptForCustomEmoji() async throws {
+func reactCommandRejectsCustomEmojiSend() async throws {
   let path = try CommandTestDatabase.makePath()
   let values = ParsedValues(
     positional: [],
@@ -68,21 +68,25 @@ func reactCommandBuildsParameterizedAppleScriptForCustomEmoji() async throws {
     flags: []
   )
   let runtime = RuntimeOptions(parsedValues: values)
-  var capturedScript = ""
-  var capturedArguments: [String] = []
-  _ = try await StdoutCapture.capture {
+  do {
     try await ReactCommand.run(
       values: values,
       runtime: runtime,
-      appleScriptRunner: { source, arguments in
-        capturedScript = source
-        capturedArguments = arguments
+      appleScriptRunner: { _, _ in
+        #expect(Bool(false))
       }
     )
+    #expect(Bool(false))
+  } catch let error as IMsgError {
+    switch error {
+    case .unsupportedReaction(let message):
+      #expect(message.contains("custom emoji tapback"))
+      #expect(message.contains("AppleScript automation"))
+      #expect(message.contains("love"))
+    default:
+      #expect(Bool(false))
+    }
+  } catch {
+    #expect(Bool(false))
   }
-  #expect(capturedArguments == ["iMessage;+;chat123", "Test Chat", "🎉"])
-  #expect(capturedScript.contains("on run argv"))
-  #expect(capturedScript.contains("keystroke customEmoji"))
-  #expect(capturedScript.contains("key code 36"))
-  #expect(capturedScript.contains("chat123") == false)
 }

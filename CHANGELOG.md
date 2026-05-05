@@ -21,6 +21,7 @@
 - fix: confirm standard tapback reaction selection in Messages automation (#53, thanks @PeterRosdahl)
 - fix: gate RPC watch reaction metadata on `include_reactions`, not `attachments` (#82)
 - fix: dedupe URL balloon preview duplicates in watch stream without cross-chat/schema regressions (#64, thanks @lesaai)
+- fix: reject unsupported custom emoji reaction sends instead of emitting a no-op AppleScript path (#55)
 - fix: normalize IMCore typing chat lookup across `iMessage`, `SMS`, and `any` prefixes (#51, #54, #56, #58)
 - docs: document macOS 26 advanced IMCore injection limits (#60)
 - fix: report macOS 26/Tahoe IMCore typing entitlement failures as advanced-feature setup errors (#60)

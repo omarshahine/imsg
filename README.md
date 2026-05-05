@@ -91,6 +91,10 @@ imsg launch
 imsg typing --to "+14155551212" --duration 5s
 ```
 
+`imsg react` sends only the standard tapbacks exposed reliably through
+Messages.app automation. Custom emoji tapbacks can be read from history/watch
+output, but are not sent by the CLI.
+
 ## Attachment notes
 `--attachments` prints per-attachment lines with name, MIME, missing flag, and resolved path (tilde expanded). By default only metadata is shown; files aren’t copied.
 
