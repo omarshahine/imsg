@@ -2,6 +2,8 @@ import Foundation
 import SQLite
 
 private struct MessageRowColumns {
+  static let balloonBundleID = "balloon_bundle_id"
+
   let rowID: String
   let chatID: String?
   let handleID: String
@@ -18,6 +20,27 @@ private struct MessageRowColumns {
   let attachments: String
   let body: String
   let threadOriginatorGUID: String
+
+  static func message(chatID: String?) -> MessageRowColumns {
+    MessageRowColumns(
+      rowID: "message_rowid",
+      chatID: chatID,
+      handleID: "handle_id",
+      sender: "sender",
+      text: "text",
+      date: "date",
+      isFromMe: "is_from_me",
+      service: "service",
+      isAudioMessage: "is_audio_message",
+      destinationCallerID: "destination_caller_id",
+      guid: "guid",
+      associatedGUID: "associated_guid",
+      associatedType: "associated_type",
+      attachments: "attachments",
+      body: "body",
+      threadOriginatorGUID: "thread_originator_guid"
+    )
+  }
 }
 
 private struct DecodedMessageRow {
@@ -37,33 +60,60 @@ private struct DecodedMessageRow {
   let threadOriginatorGUID: String
 }
 
+private struct MessageRowSelection {
+  let selectList: String
+  let columns: MessageRowColumns
+
+  init(store: MessageStore, includeChatID: Bool, includeBalloonBundleID: Bool = false) {
+    let columns = MessageRowColumns.message(chatID: includeChatID ? "chat_id" : nil)
+    let bodyColumn = store.hasAttributedBody ? "m.attributedBody" : "NULL"
+    let guidColumn = store.hasReactionColumns ? "m.guid" : "NULL"
+    let associatedGuidColumn = store.hasReactionColumns ? "m.associated_message_guid" : "NULL"
+    let associatedTypeColumn = store.hasReactionColumns ? "m.associated_message_type" : "NULL"
+    let destinationCallerColumn =
+      store.hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
+    let audioMessageColumn = store.hasAudioMessageColumn ? "m.is_audio_message" : "0"
+    let threadOriginatorColumn =
+      store.hasThreadOriginatorGUIDColumn ? "m.thread_originator_guid" : "NULL"
+    let chatColumn = includeChatID ? ", cmj.chat_id AS \(columns.chatID!)" : ""
+
+    var selectList = """
+      m.ROWID AS \(columns.rowID)\(chatColumn), m.handle_id AS \(columns.handleID),
+             h.id AS \(columns.sender), IFNULL(m.text, '') AS \(columns.text),
+             m.date AS \(columns.date), m.is_from_me AS \(columns.isFromMe),
+             m.service AS \(columns.service),
+             \(audioMessageColumn) AS \(columns.isAudioMessage),
+             \(destinationCallerColumn) AS \(columns.destinationCallerID),
+             \(guidColumn) AS \(columns.guid), \(associatedGuidColumn) AS \(columns.associatedGUID),
+             \(associatedTypeColumn) AS \(columns.associatedType),
+             (SELECT COUNT(*) FROM message_attachment_join maj WHERE maj.message_id = m.ROWID) AS \(columns.attachments),
+             \(bodyColumn) AS \(columns.body),
+             \(threadOriginatorColumn) AS \(columns.threadOriginatorGUID)
+      """
+    if includeBalloonBundleID {
+      let balloonColumn = store.hasBalloonBundleIDColumn ? "m.balloon_bundle_id" : "NULL"
+      selectList += ",\n             \(balloonColumn) AS \(MessageRowColumns.balloonBundleID)"
+    }
+
+    self.selectList = selectList
+    self.columns = columns
+  }
+}
+
 extension MessageStore {
   public func messages(chatID: Int64, limit: Int) throws -> [Message] {
     return try messages(chatID: chatID, limit: limit, filter: nil)
   }
 
   public func messages(chatID: Int64, limit: Int, filter: MessageFilter?) throws -> [Message] {
-    let bodyColumn = hasAttributedBody ? "m.attributedBody" : "NULL"
-    let guidColumn = hasReactionColumns ? "m.guid" : "NULL"
-    let associatedGuidColumn = hasReactionColumns ? "m.associated_message_guid" : "NULL"
-    let associatedTypeColumn = hasReactionColumns ? "m.associated_message_type" : "NULL"
     let destinationCallerColumn = hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
-    let audioMessageColumn = hasAudioMessageColumn ? "m.is_audio_message" : "0"
-    let threadOriginatorColumn =
-      hasThreadOriginatorGUIDColumn ? "m.thread_originator_guid" : "NULL"
+    let selection = MessageRowSelection(store: self, includeChatID: false)
     let reactionFilter =
       hasReactionColumns
       ? " AND (m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
       : ""
     var sql = """
-      SELECT m.ROWID AS message_rowid, m.handle_id AS handle_id, h.id AS sender,
-             IFNULL(m.text, '') AS text, m.date AS date, m.is_from_me AS is_from_me,
-             m.service AS service,
-             \(audioMessageColumn) AS is_audio_message, \(destinationCallerColumn) AS destination_caller_id,
-             \(guidColumn) AS guid, \(associatedGuidColumn) AS associated_guid, \(associatedTypeColumn) AS associated_type,
-             (SELECT COUNT(*) FROM message_attachment_join maj WHERE maj.message_id = m.ROWID) AS attachments,
-             \(bodyColumn) AS body,
-             \(threadOriginatorColumn) AS thread_originator_guid
+      SELECT \(selection.selectList)
       FROM message m
       JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
       LEFT JOIN handle h ON m.handle_id = h.ROWID
@@ -94,30 +144,12 @@ extension MessageStore {
 
     sql += " ORDER BY m.date DESC LIMIT ?"
     bindings.append(limit)
-    let columns = MessageRowColumns(
-      rowID: "message_rowid",
-      chatID: nil,
-      handleID: "handle_id",
-      sender: "sender",
-      text: "text",
-      date: "date",
-      isFromMe: "is_from_me",
-      service: "service",
-      isAudioMessage: "is_audio_message",
-      destinationCallerID: "destination_caller_id",
-      guid: "guid",
-      associatedGUID: "associated_guid",
-      associatedType: "associated_type",
-      attachments: "attachments",
-      body: "body",
-      threadOriginatorGUID: "thread_originator_guid"
-    )
 
     return try withConnection { db in
       var messages: [Message] = []
       let rows = try db.prepareRowIterator(sql, bindings: bindings)
       while let row = try rows.failableNext() {
-        let decoded = try decodeMessageRow(row, columns: columns, fallbackChatID: chatID)
+        let decoded = try decodeMessageRow(row, columns: selection.columns, fallbackChatID: chatID)
         let replyToGUID = replyToGUID(
           associatedGuid: decoded.associatedGUID,
           associatedType: decoded.associatedType
@@ -162,15 +194,11 @@ extension MessageStore {
     limit: Int,
     includeReactions: Bool
   ) throws -> [Message] {
-    let bodyColumn = hasAttributedBody ? "m.attributedBody" : "NULL"
-    let guidColumn = hasReactionColumns ? "m.guid" : "NULL"
-    let associatedGuidColumn = hasReactionColumns ? "m.associated_message_guid" : "NULL"
-    let associatedTypeColumn = hasReactionColumns ? "m.associated_message_type" : "NULL"
-    let destinationCallerColumn = hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
-    let audioMessageColumn = hasAudioMessageColumn ? "m.is_audio_message" : "0"
-    let balloonBundleIDColumn = hasBalloonBundleIDColumn ? "m.balloon_bundle_id" : "NULL"
-    let threadOriginatorColumn =
-      hasThreadOriginatorGUIDColumn ? "m.thread_originator_guid" : "NULL"
+    let selection = MessageRowSelection(
+      store: self,
+      includeChatID: true,
+      includeBalloonBundleID: true
+    )
     // Only filter out reactions if includeReactions is false
     let reactionFilter: String
     if includeReactions {
@@ -184,15 +212,7 @@ extension MessageStore {
       }
     }
     var sql = """
-      SELECT m.ROWID AS message_rowid, cmj.chat_id AS chat_id, m.handle_id AS handle_id,
-             h.id AS sender, IFNULL(m.text, '') AS text, m.date AS date,
-             m.is_from_me AS is_from_me, m.service AS service,
-             \(audioMessageColumn) AS is_audio_message, \(destinationCallerColumn) AS destination_caller_id,
-             \(guidColumn) AS guid, \(associatedGuidColumn) AS associated_guid, \(associatedTypeColumn) AS associated_type,
-             (SELECT COUNT(*) FROM message_attachment_join maj WHERE maj.message_id = m.ROWID) AS attachments,
-             \(bodyColumn) AS body,
-             \(threadOriginatorColumn) AS thread_originator_guid,
-             \(balloonBundleIDColumn) AS balloon_bundle_id
+      SELECT \(selection.selectList)
       FROM message m
       LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
       LEFT JOIN handle h ON m.handle_id = h.ROWID
@@ -205,24 +225,6 @@ extension MessageStore {
     }
     sql += " ORDER BY m.ROWID ASC LIMIT ?"
     bindings.append(limit)
-    let columns = MessageRowColumns(
-      rowID: "message_rowid",
-      chatID: "chat_id",
-      handleID: "handle_id",
-      sender: "sender",
-      text: "text",
-      date: "date",
-      isFromMe: "is_from_me",
-      service: "service",
-      isAudioMessage: "is_audio_message",
-      destinationCallerID: "destination_caller_id",
-      guid: "guid",
-      associatedGUID: "associated_guid",
-      associatedType: "associated_type",
-      attachments: "attachments",
-      body: "body",
-      threadOriginatorGUID: "thread_originator_guid"
-    )
 
     return try withConnection { db in
       var messages: [Message] = []
@@ -230,8 +232,8 @@ extension MessageStore {
 
       let rows = try db.prepareRowIterator(sql, bindings: bindings)
       while let row = try rows.failableNext() {
-        let decoded = try decodeMessageRow(row, columns: columns, fallbackChatID: chatID)
-        let balloonBundleID = try stringValue(row, "balloon_bundle_id")
+        let decoded = try decodeMessageRow(row, columns: selection.columns, fallbackChatID: chatID)
+        let balloonBundleID = try stringValue(row, MessageRowColumns.balloonBundleID)
         if balloonBundleID == urlBalloonProvider,
           shouldSkipURLBalloonDuplicate(
             chatID: decoded.chatID,
@@ -291,23 +293,9 @@ extension MessageStore {
   {
     guard !text.isEmpty else { return nil }
 
-    let bodyColumn = hasAttributedBody ? "m.attributedBody" : "NULL"
-    let guidColumn = hasReactionColumns ? "m.guid" : "NULL"
-    let associatedGuidColumn = hasReactionColumns ? "m.associated_message_guid" : "NULL"
-    let associatedTypeColumn = hasReactionColumns ? "m.associated_message_type" : "NULL"
-    let destinationCallerColumn = hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
-    let audioMessageColumn = hasAudioMessageColumn ? "m.is_audio_message" : "0"
-    let threadOriginatorColumn =
-      hasThreadOriginatorGUIDColumn ? "m.thread_originator_guid" : "NULL"
+    let selection = MessageRowSelection(store: self, includeChatID: true)
     var sql = """
-      SELECT m.ROWID AS message_rowid, cmj.chat_id AS chat_id, m.handle_id AS handle_id,
-             h.id AS sender, IFNULL(m.text, '') AS text, m.date AS date,
-             m.is_from_me AS is_from_me, m.service AS service,
-             \(audioMessageColumn) AS is_audio_message, \(destinationCallerColumn) AS destination_caller_id,
-             \(guidColumn) AS guid, \(associatedGuidColumn) AS associated_guid, \(associatedTypeColumn) AS associated_type,
-             (SELECT COUNT(*) FROM message_attachment_join maj WHERE maj.message_id = m.ROWID) AS attachments,
-             \(bodyColumn) AS body,
-             \(threadOriginatorColumn) AS thread_originator_guid
+      SELECT \(selection.selectList)
       FROM message m
       LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
       LEFT JOIN handle h ON m.handle_id = h.ROWID
@@ -322,29 +310,10 @@ extension MessageStore {
     }
     sql += " ORDER BY m.date DESC, m.ROWID DESC LIMIT 1"
 
-    let columns = MessageRowColumns(
-      rowID: "message_rowid",
-      chatID: "chat_id",
-      handleID: "handle_id",
-      sender: "sender",
-      text: "text",
-      date: "date",
-      isFromMe: "is_from_me",
-      service: "service",
-      isAudioMessage: "is_audio_message",
-      destinationCallerID: "destination_caller_id",
-      guid: "guid",
-      associatedGUID: "associated_guid",
-      associatedType: "associated_type",
-      attachments: "attachments",
-      body: "body",
-      threadOriginatorGUID: "thread_originator_guid"
-    )
-
     return try withConnection { db in
       let rows = try db.prepareRowIterator(sql, bindings: bindings)
       guard let row = try rows.failableNext() else { return nil }
-      let decoded = try decodeMessageRow(row, columns: columns, fallbackChatID: chatID)
+      let decoded = try decodeMessageRow(row, columns: selection.columns, fallbackChatID: chatID)
       let replyToGUID = replyToGUID(
         associatedGuid: decoded.associatedGUID,
         associatedType: decoded.associatedType
