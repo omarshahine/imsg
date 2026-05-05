@@ -19,4 +19,4 @@ jobs:
       - name: Test
         run: make test
       - name: Build
-        run: make build ARCHES=$(uname -m)
+        run: make build ARCHES="$(uname -m)"
