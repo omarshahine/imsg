@@ -1,33 +1,49 @@
 # Changelog
 
 ## Unreleased
-- feat: add completion script and LLM reference generation (#21, thanks @bdmorin)
-- feat: optionally expose model-compatible converted attachment files for CAF/GIF metadata (#73, thanks @mfzeidan)
-- feat: add `imsg group` chat metadata lookup and group fields to `chats --json` (#88, thanks @mryanb)
-- feat: expose read-only chat account routing hints for multi-number diagnostics (#18)
-- fix: return best-effort message `id` and `guid` from RPC `send` responses (#85)
-- fix: keep watch streams alive with a periodic poll fallback when filesystem events are missed (#78)
-- fix: detect Tahoe group-send ghost rows and fail instead of reporting false success (#90, thanks @loop)
-- docs: document standard tapback sending and watch reaction events (#66, thanks @safaaleigh)
-- docs: clarify that `send --file` supports audio/file attachments (#35, thanks @rock19)
-- docs: clarify watch fallback polling and permission requirements (#46, thanks @wangran870414)
-- fix: expose RPC watch debounce and default it to 500ms to reduce outbound echo races (#72, #80)
-- fix: speed up chat listing by using `chat_message_join.message_date` when available (#76, thanks @tmad4000)
-- fix: speed up JSON history metadata lookups by batching attachments and reactions (#81, thanks @kacy)
-- docs: clarify stale Full Disk Access and Terminal.app troubleshooting (#28, #32, #33, #83)
-- fix: publish universal macOS release binaries for Homebrew installs (#68, #79)
-- fix: include group metadata in CLI JSON history/watch output (#57, thanks @clawbunny)
-- docs: document Homebrew install path in the README (#61, thanks @joshuayoes)
-- fix: decode UTF-16LE BOM attributed message bodies in plain-text history output (#91, thanks @clawbunny)
-- fix: confirm standard tapback reaction selection in Messages automation (#53, thanks @PeterRosdahl)
-- fix: gate RPC watch reaction metadata on `include_reactions`, not `attachments` (#82)
-- fix: dedupe URL balloon preview duplicates in watch stream without cross-chat/schema regressions (#64, thanks @lesaai)
-- fix: reject unsupported custom emoji reaction sends instead of emitting a no-op AppleScript path (#55)
-- fix: normalize IMCore typing chat lookup across `iMessage`, `SMS`, and `any` prefixes (#51, #54, #56, #58)
-- docs: document macOS 26 advanced IMCore injection limits (#60)
-- fix: report macOS 26/Tahoe IMCore typing entitlement failures as advanced-feature setup errors (#60)
-- docs: add a local release helper for dispatching Homebrew tap updates (#97, thanks @dinakars777)
-- feat: resolve contact names in chat/message output and direct sends (#75, #77, thanks @regaw-leinad and @jsindy)
+
+## 0.6.0 - 2026-05-05
+
+### More Reliable Live Streams And History
+- fix: keep `imsg watch` streams alive with a lightweight polling fallback when macOS misses filesystem events (#78).
+- fix: dedupe URL preview balloon messages in `watch` without dropping similar messages from other chats or older database schemas (#64, thanks @lesaai).
+- fix: decode UTF-16LE BOM attributed bodies so plain-text history output recovers messages whose `text` column is empty (#91, thanks @clawbunny).
+- fix: speed up JSON history output by batching attachment and reaction metadata lookups (#81, thanks @kacy).
+- fix: speed up chat listing by using `chat_message_join.message_date` when Messages provides it (#76, thanks @tmad4000).
+- docs: clarify stale Full Disk Access grants, Terminal.app permissions, and watch fallback polling requirements (#28, #32, #33, #46, #83, thanks @wangran870414).
+
+### Better Chat, Group, And Account Diagnostics
+- feat: add `imsg group --chat-id <id>` to inspect a chat's identifier, GUID, service, participants, account metadata, and group/direct status (#88, thanks @mryanb).
+- feat: resolve Contacts names in `chats`, `history`, `watch`, and direct sends while preserving raw handles for automation (#75, #77, thanks @regaw-leinad and @jsindy).
+- feat: expose read-only account routing hints (`account_id`, `account_login`, `last_addressed_handle`) for multi-number diagnostics (#18).
+- fix: include group metadata in CLI JSON history/watch output, not just RPC payloads (#57, thanks @clawbunny).
+
+### Sending, RPC, And Automation Fixes
+- fix: return best-effort sent message `id` and `guid` from RPC `send` responses when the row can be observed after Messages accepts the send (#85).
+- fix: expose RPC watch debounce and default it to 500ms to reduce outbound echo races (#72, #80).
+- fix: gate RPC watch reaction metadata on `include_reactions`, not `attachments` (#82).
+- fix: confirm standard tapback reaction selection in Messages automation before reporting success (#53, thanks @PeterRosdahl).
+- fix: reject unsupported custom emoji reaction sends instead of taking a no-op AppleScript path (#55).
+- fix: detect Tahoe group-send ghost rows and fail instead of reporting false success (#90, thanks @loop).
+- docs: document standard tapback sending and watch reaction events (#66, thanks @safaaleigh).
+
+### Attachments, Completions, And Install Polish
+- feat: optionally report model-compatible converted receive-side attachment files for CAF audio and GIF images (#73, thanks @mfzeidan).
+- feat: add shell completions and an LLM-oriented command reference generator (`imsg completions bash|zsh|fish|llm`) (#21, thanks @bdmorin).
+- fix: publish universal macOS release binaries for Homebrew installs (#68, #79).
+- docs: document the Homebrew install path in the README (#61, thanks @joshuayoes).
+- docs: clarify that `send --file` supports regular file and audio attachments through Messages.app (#35, thanks @rock19).
+- docs: add a local release helper for dispatching Homebrew tap updates (#97, thanks @dinakars777).
+
+### Advanced IMCore / Tahoe Notes
+- feat: add advanced IMCore controls for `status`, `launch`, `read`, and typing diagnostics.
+- fix: normalize IMCore typing chat lookup across `iMessage`, `SMS`, and `any` prefixes (#51, #54, #56, #58).
+- fix: report macOS 26/Tahoe IMCore typing entitlement failures as advanced-feature setup errors instead of misleading chat lookup failures (#60).
+- docs: document macOS 26 advanced IMCore injection, library-validation, and private-entitlement limits (#60).
+
+### Internal Safety
+- refactor: centralize Messages schema detection, row decoding, query assembly, typed row IDs, and attachment/reaction query paths behind smaller `MessageStore` extensions.
+- test: expand release packaging, CLI metadata, schema-compatibility, JSON newline, stdout capture, and live-read coverage.
 
 ## 0.5.0 - 2026-02-16
 
