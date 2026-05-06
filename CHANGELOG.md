@@ -2,9 +2,22 @@
 
 ## Unreleased
 
+## 0.7.0 - 2026-05-06
+
+### Private API Bridge
 - feat: port the BlueBubbles-inspired private-API bridge surface for rich sends,
-  message mutation, chat management, account/nickname introspection, and v2
-  concurrent bridge IPC (#100, thanks @omarshahine).
+  message mutation, chat management, account/nickname introspection, and live
+  bridge events; add local DB search and v2 concurrent bridge IPC (#100, thanks
+  @omarshahine).
+- fix: route default bridge calls over v2 IPC when available and reject
+  unsupported `chat-create --service SMS` requests instead of reporting a
+  service that was not applied.
+
+### Docs And CI
+- docs: publish the per-feature docs site at `imsg.sh` and add
+  syntax-highlighted code examples.
+- ci: update GitHub Actions for the Node 24 runtime and quote workflow
+  architecture lookup.
 
 ## 0.6.0 - 2026-05-05
 
