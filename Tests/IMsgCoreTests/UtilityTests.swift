@@ -84,6 +84,59 @@ func attachmentResolverLeavesUnsupportedFilesUnconverted() throws {
 }
 
 @Test
+func securePathDetectsFinalSymlink() throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let target = dir.appendingPathComponent("target.txt")
+  let link = dir.appendingPathComponent("link.txt")
+  try Data("hello".utf8).write(to: target)
+  try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+  #expect(SecurePath.hasSymlinkComponent(target.path) == false)
+  #expect(SecurePath.hasSymlinkComponent(link.path) == true)
+}
+
+@Test
+func securePathDetectsParentSymlink() throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let realParent = dir.appendingPathComponent("real")
+  let linkParent = dir.appendingPathComponent("linked")
+  try FileManager.default.createDirectory(at: realParent, withIntermediateDirectories: true)
+  try FileManager.default.createSymbolicLink(at: linkParent, withDestinationURL: realParent)
+
+  let realChild = realParent.appendingPathComponent("child.txt")
+  let linkedChild = linkParent.appendingPathComponent("child.txt")
+  try Data("hello".utf8).write(to: realChild)
+
+  #expect(SecurePath.hasSymlinkComponent(realChild.path) == false)
+  #expect(SecurePath.hasSymlinkComponent(linkedChild.path) == true)
+}
+
+@Test
+func securePathAllowsTrustedSystemAliasPrefixes() throws {
+  let privateTmp = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+  let dirName = "imsg-secure-path-\(UUID().uuidString)"
+  let realDir = privateTmp.appendingPathComponent(dirName)
+  try FileManager.default.createDirectory(at: realDir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: realDir) }
+
+  let realFile = realDir.appendingPathComponent("target.txt")
+  try Data("hello".utf8).write(to: realFile)
+
+  let aliasFile = "/tmp/\(dirName)/target.txt"
+  #expect(SecurePath.hasSymlinkComponent(aliasFile) == false)
+
+  let link = realDir.appendingPathComponent("link.txt")
+  try FileManager.default.createSymbolicLink(at: link, withDestinationURL: realFile)
+  #expect(SecurePath.hasSymlinkComponent("/tmp/\(dirName)/link.txt") == true)
+}
+
+@Test
 func iso8601ParserParsesFormats() {
   let fractional = "2024-01-02T03:04:05.678Z"
   let standard = "2024-01-02T03:04:05Z"

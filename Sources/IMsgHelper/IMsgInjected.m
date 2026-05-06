@@ -104,6 +104,98 @@ static void debugLog(NSString *fmt, ...) {
     if (fp) { fputs(line.UTF8String, fp); fclose(fp); }
 }
 
+#pragma mark - Path Hardening
+
+// Returns YES if any component of `path` (after tilde expansion and CWD
+// resolution for relative paths) is a symbolic link, including the final
+// component. Mirrors `SecurePath.hasSymlinkComponent` in IMsgCore: realpath()
+// alone isn't enough because macOS rewrites `/tmp` -> `/private/tmp`, breaking
+// any "resolved == lexical" check. Walking each component with lstat() and
+// rejecting on S_IFLNK is the robust answer.
+//
+// Used to refuse RPC queue dirs and attachment paths that traverse a symlink
+// at any level, closing the same-UID-attacker exfiltration path where someone
+// drops a symlink to ~/.ssh/id_rsa or a password-manager DB and has Messages
+// send it as an attachment to an attacker-controlled handle.
+static NSString *normalizeTrustedSystemAliasPrefix(NSString *path) {
+    NSDictionary<NSString *, NSString *> *aliases = @{
+        @"/tmp": @"/private/tmp",
+        @"/var": @"/private/var",
+        @"/etc": @"/private/etc",
+    };
+    for (NSString *alias in aliases) {
+        if ([path isEqualToString:alias]) {
+            return aliases[alias];
+        }
+        NSString *prefix = [alias stringByAppendingString:@"/"];
+        if ([path hasPrefix:prefix]) {
+            return [aliases[alias] stringByAppendingString:
+                [path substringFromIndex:alias.length]];
+        }
+    }
+    return path;
+}
+
+static BOOL pathHasSymlinkComponent(NSString *path) {
+    NSString *lexicalPath = [path stringByExpandingTildeInPath];
+    if (!lexicalPath.isAbsolutePath) {
+        lexicalPath = [[[NSFileManager defaultManager] currentDirectoryPath]
+            stringByAppendingPathComponent:lexicalPath];
+    }
+    lexicalPath = normalizeTrustedSystemAliasPrefix(lexicalPath);
+
+    NSArray *components = [lexicalPath pathComponents];
+    if (components.count == 0) return NO;
+
+    NSString *cursor = [components.firstObject isEqualToString:@"/"] ? @"/" : @"";
+    for (NSString *component in components) {
+        if ([component isEqualToString:@"/"] || component.length == 0) continue;
+        cursor = [cursor stringByAppendingPathComponent:component];
+
+        struct stat st;
+        if (lstat([cursor fileSystemRepresentation], &st) != 0) {
+            continue;
+        }
+        if (S_ISLNK(st.st_mode)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+static BOOL ensureSecureDirectory(NSString *path, NSError **error) {
+    if (pathHasSymlinkComponent(path)) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"imsg.bridge"
+                                         code:1
+                                     userInfo:@{
+                NSLocalizedDescriptionKey: @"RPC queue path traverses a symlink"
+            }];
+        }
+        return NO;
+    }
+
+    NSDictionary *secureMode = @{ NSFilePosixPermissions: @(0700) };
+    BOOL ok = [[NSFileManager defaultManager]
+        createDirectoryAtPath:path
+  withIntermediateDirectories:YES
+                   attributes:secureMode
+                        error:error];
+    if (!ok) return NO;
+    if (pathHasSymlinkComponent(path)) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"imsg.bridge"
+                                         code:2
+                                     userInfo:@{
+                NSLocalizedDescriptionKey: @"RPC queue path traverses a symlink (post-mkdir)"
+            }];
+        }
+        return NO;
+    }
+    chmod([path fileSystemRepresentation], 0700);
+    return YES;
+}
+
 #pragma mark - Selector Probes
 
 // Populated at startup by probeSelectors(). Surfaced via the `status` action so
@@ -1908,6 +2000,19 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     if (!filePath.length) return errorResponse(requestId, @"Missing filePath");
+    NSError *attrErr = nil;
+    NSDictionary *attrs = [[NSFileManager defaultManager]
+        attributesOfItemAtPath:filePath error:&attrErr];
+    if (!attrs) {
+        return errorResponse(requestId,
+            [NSString stringWithFormat:@"File not found: %@", filePath]);
+    }
+    if ([attrs[NSFileType] isEqualToString:NSFileTypeSymbolicLink]) {
+        return errorResponse(requestId, @"Symlinked attachment paths are not allowed");
+    }
+    if (pathHasSymlinkComponent(filePath)) {
+        return errorResponse(requestId, @"Attachment path traverses a symlink");
+    }
     if (![[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
         return errorResponse(requestId,
             [NSString stringWithFormat:@"File not found: %@", filePath]);
@@ -3111,15 +3216,18 @@ static void startV2InboxWatcher(void) {
     initFilePaths();
 
     // Ensure the queue dirs exist (CLI also pre-creates them, but be defensive
-    // in case a v2-only run happened).
-    [[NSFileManager defaultManager] createDirectoryAtPath:kRpcInDir
-                              withIntermediateDirectories:YES
-                                               attributes:nil
-                                                    error:nil];
-    [[NSFileManager defaultManager] createDirectoryAtPath:kRpcOutDir
-                              withIntermediateDirectories:YES
-                                               attributes:nil
-                                                    error:nil];
+    // in case a v2-only run happened). Mode 0700 keeps other UIDs / sandboxed
+    // peers from being able to enumerate or inject RPC requests, and the
+    // symlink check refuses to operate if any path component traverses a
+    // link, see pathHasSymlinkComponent for rationale.
+    NSError *secureDirError = nil;
+    if (!ensureSecureDirectory(kRpcDir, &secureDirError) ||
+        !ensureSecureDirectory(kRpcInDir, &secureDirError) ||
+        !ensureSecureDirectory(kRpcOutDir, &secureDirError)) {
+        NSLog(@"[imsg-bridge v2] Refusing insecure RPC queue path: %@",
+              secureDirError.localizedDescription);
+        return;
+    }
 
     NSLog(@"[imsg-bridge v2] Inbox: %@", kRpcInDir);
     NSLog(@"[imsg-bridge v2] Outbox: %@", kRpcOutDir);
