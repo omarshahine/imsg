@@ -123,22 +123,44 @@ public final class MessagesLauncher: @unchecked Sendable {
     // Pre-create v2 RPC queue directories so the dylib can FSEvent-watch them
     // immediately on startup (FSEventStream registration on a missing path
     // silently fails to deliver events).
-    try? FileManager.default.createDirectory(
-      atPath: bridgeInboxDirectory, withIntermediateDirectories: true)
-    try? FileManager.default.createDirectory(
-      atPath: bridgeOutboxDirectory, withIntermediateDirectories: true)
-    cleanQueueDirectory(bridgeInboxDirectory)
-    cleanQueueDirectory(bridgeOutboxDirectory)
+    try ensureSecureQueueDirectory(bridgeInboxDirectory)
+    try ensureSecureQueueDirectory(bridgeOutboxDirectory)
+    try cleanQueueDirectory(bridgeInboxDirectory)
+    try cleanQueueDirectory(bridgeOutboxDirectory)
 
     try launchWithInjection()
     try waitForReady(timeout: 15.0)
   }
 
-  private func cleanQueueDirectory(_ path: String) {
-    guard let entries = try? FileManager.default.contentsOfDirectory(atPath: path)
-    else { return }
+  private func ensureSecureQueueDirectory(_ path: String) throws {
+    if SecurePath.hasSymlinkComponent(path) {
+      throw MessagesLauncherError.socketError("RPC queue path traverses a symlink: \(path)")
+    }
+    do {
+      try FileManager.default.createDirectory(
+        atPath: path,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+      if SecurePath.hasSymlinkComponent(path) {
+        throw MessagesLauncherError.socketError(
+          "RPC queue path traverses a symlink (post-mkdir): \(path)")
+      }
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o700], ofItemAtPath: path)
+    } catch let error as MessagesLauncherError {
+      throw error
+    } catch {
+      throw MessagesLauncherError.socketError("mkdir \(path): \(error.localizedDescription)")
+    }
+  }
+
+  private func cleanQueueDirectory(_ path: String) throws {
+    if SecurePath.hasSymlinkComponent(path) {
+      throw MessagesLauncherError.socketError("RPC queue path traverses a symlink: \(path)")
+    }
+    let entries = try FileManager.default.contentsOfDirectory(atPath: path)
     for entry in entries {
-      try? FileManager.default.removeItem(atPath: (path as NSString).appendingPathComponent(entry))
+      try FileManager.default.removeItem(atPath: (path as NSString).appendingPathComponent(entry))
     }
   }
 

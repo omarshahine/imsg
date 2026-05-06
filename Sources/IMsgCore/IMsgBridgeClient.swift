@@ -126,6 +126,9 @@ public final class IMsgBridgeClient: @unchecked Sendable {
   }
 
   private func ensureDirectory(_ path: String) throws {
+    if SecurePath.hasSymlinkComponent(path) {
+      throw IMsgBridgeError.ioError("\(path) traverses a symlink")
+    }
     var isDir: ObjCBool = false
     if FileManager.default.fileExists(atPath: path, isDirectory: &isDir) {
       if isDir.boolValue { return }
@@ -133,7 +136,14 @@ public final class IMsgBridgeClient: @unchecked Sendable {
     }
     do {
       try FileManager.default.createDirectory(
-        atPath: path, withIntermediateDirectories: true)
+        atPath: path,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+      if SecurePath.hasSymlinkComponent(path) {
+        throw IMsgBridgeError.ioError("\(path) traverses a symlink (post-mkdir)")
+      }
+    } catch let error as IMsgBridgeError {
+      throw error
     } catch {
       throw IMsgBridgeError.ioError("mkdir \(path): \(error.localizedDescription)")
     }
