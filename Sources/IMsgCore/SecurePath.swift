@@ -13,6 +13,23 @@ import Foundation
 /// breaking that check for legitimate paths. Walking each component with
 /// `lstat()` and refusing the path on any `S_IFLNK` is the robust answer.
 public enum SecurePath {
+  private static func normalizingTrustedSystemAliasPrefix(_ path: String) -> String {
+    let aliases = [
+      "/tmp": "/private/tmp",
+      "/var": "/private/var",
+      "/etc": "/private/etc",
+    ]
+    for (alias, canonical) in aliases {
+      if path == alias {
+        return canonical
+      }
+      if path.hasPrefix(alias + "/") {
+        return canonical + path.dropFirst(alias.count)
+      }
+    }
+    return path
+  }
+
   /// Returns true if any component of `path` (after tilde expansion and CWD
   /// resolution for relative paths) is a symbolic link. Final component
   /// included.
@@ -23,6 +40,7 @@ public enum SecurePath {
         (FileManager.default.currentDirectoryPath as NSString)
         .appendingPathComponent(lexicalPath)
     }
+    lexicalPath = normalizingTrustedSystemAliasPrefix(lexicalPath)
 
     let components = (lexicalPath as NSString).pathComponents
     guard !components.isEmpty else { return false }

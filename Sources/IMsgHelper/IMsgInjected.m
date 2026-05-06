@@ -106,12 +106,43 @@ static void debugLog(NSString *fmt, ...) {
 
 #pragma mark - Path Hardening
 
+// Returns YES if any component of `path` (after tilde expansion and CWD
+// resolution for relative paths) is a symbolic link, including the final
+// component. Mirrors `SecurePath.hasSymlinkComponent` in IMsgCore: realpath()
+// alone isn't enough because macOS rewrites `/tmp` -> `/private/tmp`, breaking
+// any "resolved == lexical" check. Walking each component with lstat() and
+// rejecting on S_IFLNK is the robust answer.
+//
+// Used to refuse RPC queue dirs and attachment paths that traverse a symlink
+// at any level, closing the same-UID-attacker exfiltration path where someone
+// drops a symlink to ~/.ssh/id_rsa or a password-manager DB and has Messages
+// send it as an attachment to an attacker-controlled handle.
+static NSString *normalizeTrustedSystemAliasPrefix(NSString *path) {
+    NSDictionary<NSString *, NSString *> *aliases = @{
+        @"/tmp": @"/private/tmp",
+        @"/var": @"/private/var",
+        @"/etc": @"/private/etc",
+    };
+    for (NSString *alias in aliases) {
+        if ([path isEqualToString:alias]) {
+            return aliases[alias];
+        }
+        NSString *prefix = [alias stringByAppendingString:@"/"];
+        if ([path hasPrefix:prefix]) {
+            return [aliases[alias] stringByAppendingString:
+                [path substringFromIndex:alias.length]];
+        }
+    }
+    return path;
+}
+
 static BOOL pathHasSymlinkComponent(NSString *path) {
     NSString *lexicalPath = [path stringByExpandingTildeInPath];
     if (!lexicalPath.isAbsolutePath) {
         lexicalPath = [[[NSFileManager defaultManager] currentDirectoryPath]
             stringByAppendingPathComponent:lexicalPath];
     }
+    lexicalPath = normalizeTrustedSystemAliasPrefix(lexicalPath);
 
     NSArray *components = [lexicalPath pathComponents];
     if (components.count == 0) return NO;
@@ -3188,7 +3219,7 @@ static void startV2InboxWatcher(void) {
     // in case a v2-only run happened). Mode 0700 keeps other UIDs / sandboxed
     // peers from being able to enumerate or inject RPC requests, and the
     // symlink check refuses to operate if any path component traverses a
-    // link — see pathHasSymlinkComponent for rationale.
+    // link, see pathHasSymlinkComponent for rationale.
     NSError *secureDirError = nil;
     if (!ensureSecureDirectory(kRpcDir, &secureDirError) ||
         !ensureSecureDirectory(kRpcInDir, &secureDirError) ||

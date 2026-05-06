@@ -7,6 +7,11 @@
   chat/group lifecycle RPC methods after the BlueBubbles-inspired bridge port
   regressed on Tahoe (#101, thanks @omarshahine).
 
+### Security
+- fix: harden bridge IPC queue directories and attachment paths against
+  symlink traversal while preserving trusted macOS system aliases like `/tmp`
+  (#105, thanks @omarshahine).
+
 ## 0.7.2 - 2026-05-06
 
 ### Release Packaging

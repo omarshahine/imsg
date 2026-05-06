@@ -118,6 +118,25 @@ func securePathDetectsParentSymlink() throws {
 }
 
 @Test
+func securePathAllowsTrustedSystemAliasPrefixes() throws {
+  let privateTmp = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+  let dirName = "imsg-secure-path-\(UUID().uuidString)"
+  let realDir = privateTmp.appendingPathComponent(dirName)
+  try FileManager.default.createDirectory(at: realDir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: realDir) }
+
+  let realFile = realDir.appendingPathComponent("target.txt")
+  try Data("hello".utf8).write(to: realFile)
+
+  let aliasFile = "/tmp/\(dirName)/target.txt"
+  #expect(SecurePath.hasSymlinkComponent(aliasFile) == false)
+
+  let link = realDir.appendingPathComponent("link.txt")
+  try FileManager.default.createSymbolicLink(at: link, withDestinationURL: realFile)
+  #expect(SecurePath.hasSymlinkComponent("/tmp/\(dirName)/link.txt") == true)
+}
+
+@Test
 func iso8601ParserParsesFormats() {
   let fractional = "2024-01-02T03:04:05.678Z"
   let standard = "2024-01-02T03:04:05Z"
