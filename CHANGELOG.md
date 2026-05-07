@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 - Unreleased
 
 ### Linux Read-Only Preview
 - feat: add a Linux read-only core build with fixture-backed tests and GitHub
   CI coverage for copied Messages databases.
 - build: add Linux release archive packaging for `imsg-linux-x86_64.tar.gz`.
+- docs: document Linux as read-only support for existing copied Messages
+  databases.
 
 ## 0.7.3 - 2026-05-06
 

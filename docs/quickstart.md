@@ -14,6 +14,10 @@ imsg --version
 
 If you'd rather build from source, follow [Install](install.md).
 
+On Linux, use the [read-only preview](linux.md) with an existing Messages
+database copied from macOS. The rest of this quickstart is macOS-focused because
+watching the live database and sending require Messages.app.
+
 ## 2. Grant Full Disk Access
 
 `imsg` reads `~/Library/Messages/chat.db` directly. macOS protects that file behind Full Disk Access.
@@ -93,4 +97,5 @@ imsg send --chat-id 42 --text "same thread"
 - [JSON output](json.md) — the stable schema agents should consume.
 - [JSON-RPC](rpc.md) — same surfaces, but over stdio with a single long-running process.
 - [Attachments](attachments.md) — metadata, original paths, and CAF/GIF conversion.
+- [Linux read-only preview](linux.md) — inspect a copied macOS Messages database on Linux.
 - [Troubleshooting](troubleshooting.md) — when reads silently return nothing.

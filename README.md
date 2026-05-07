@@ -3,6 +3,8 @@
 `imsg` is a macOS command-line tool for Messages.app. It reads your local
 Messages database, streams new iMessage/SMS rows, sends messages through
 Messages.app automation, and exposes the same surfaces over JSON and JSON-RPC.
+Linux builds are read-only preview builds for inspecting an existing Messages
+database copied from macOS.
 
 Most read workflows need only Full Disk Access. Sending and standard tapbacks
 also need macOS Automation permission for Messages.app. Advanced IMCore features
@@ -24,6 +26,8 @@ are increasingly limited by macOS 26.
 - Report attachment metadata, and optionally expose model-compatible converted
   receive-side CAF/GIF files.
 - Use JSON-RPC over stdio for long-running integrations.
+- Run read-only `chats`, `group`, `history`, and `search` on Linux against a
+  copied `chat.db`.
 
 ## Requirements
 
@@ -33,6 +37,10 @@ are increasingly limited by macOS 26.
 - Automation permission for Messages.app when using `send` or `react`.
 - Optional Contacts permission for name resolution.
 - Optional `ffmpeg` on `PATH` for receive-side attachment conversion.
+
+Linux support is read-only and requires an existing Messages database copied
+from macOS. It does not send, react, mark read, show typing, launch
+Messages.app, or access iMessage/SMS accounts on Linux.
 
 For SMS, enable Text Message Forwarding on your iPhone for this Mac.
 

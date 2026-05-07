@@ -5,11 +5,14 @@ description: "Cutting an imsg release: changelog, version bump, signed/notarized
 
 ## Release notes source
 - GitHub Release notes come from `CHANGELOG.md` for the matching version section (`## X.Y.Z - YYYY-MM-DD`).
-- Keep `## Unreleased` at the top (empty is fine).
+- Keep the unreleased section at the top. During a release train it may be
+  versioned, for example `## 0.8.0 - Unreleased`; before tagging, change it to
+  `## X.Y.Z - YYYY-MM-DD`.
 
 ## Steps
 1. Update `CHANGELOG.md` and version
-   - Move entries from `Unreleased` into a new `## X.Y.Z - YYYY-MM-DD` section.
+   - Move entries from `Unreleased` into a new `## X.Y.Z - YYYY-MM-DD` section,
+     or date the existing `## X.Y.Z - Unreleased` section.
    - Credit contributors (e.g. `thanks @user`).
    - Update `version.env` to `X.Y.Z`.
    - Run `scripts/generate-version.sh` (also refreshes `Sources/imsg/Resources/Info.plist`).
@@ -45,12 +48,12 @@ description: "Cutting an imsg release: changelog, version bump, signed/notarized
 - `.github/workflows/release.yml` is only for manual rebuilds, not the primary release path.
 
 ## Linux support schedule
-- The next patch release may include an experimental Linux `x86_64` archive,
-  but the user-facing docs should still describe Linux as read-only preview
-  support until install and packaging are proven on a tagged release.
-- Linux work is staged as a read-only core pass: SwiftPM build, Linux-only tests,
-  release archive generation, and CI coverage for reading a copied Messages
-  database fixture.
-- Promote Linux to full user docs only after the read-only command set is green
-  in CI, Crabbox has verified the same gate on Linux, and install instructions
-  exist for the published archive.
+- 0.8.0 is the Linux read-only preview release. It may include an experimental
+  Linux `x86_64` archive, but docs must keep describing Linux as read-only
+  support for existing copied Messages databases.
+- Linux support is staged as a read-only core pass: SwiftPM build, Linux-only
+  tests, release archive generation, and CI coverage for reading copied
+  Messages database fixtures.
+- Do not document Linux send/watch/Contacts/IMCore support unless those features
+  are implemented and proven on Linux. They currently depend on macOS frameworks
+  or Messages.app automation.

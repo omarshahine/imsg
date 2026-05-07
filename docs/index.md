@@ -36,10 +36,12 @@ imsg send --to "Jane Appleseed" --file ~/Desktop/voice.m4a
 - **Built for agents.** Stable JSON-RPC over stdio, deterministic JSON schemas, and `imsg completions llm` for in-context CLI help.
 - **Contacts integration.** Resolves names from your Address Book when permission is granted, while keeping raw handles in the output.
 - **Attachment-aware.** Reports filenames, UTIs, byte counts, and resolved paths. Optional `--convert-attachments` exposes model-friendly CAF→M4A and GIF→PNG variants.
+- **Linux read-only preview.** Linux builds can inspect an existing Messages database copied from macOS. They do not send, mutate, or connect to Messages.app.
 
 ## Pick your path
 
 - **Trying it.** [Install](install.md) → [Quickstart](quickstart.md). Five minutes from `brew install` to a streaming watch.
+- **Reading on Linux.** [Linux read-only preview](linux.md) covers copying an existing database from macOS and running read-only commands.
 - **Wiring up an agent.** [JSON output](json.md) and [JSON-RPC](rpc.md) cover the stable contracts; [completions](completions.md) shows how to feed the CLI reference into an LLM.
 - **Sending messages.** [Send](send.md) and [React](send.md#standard-tapbacks) explain text/file/group sends and how the Tahoe ghost-row check works.
 - **Diagnosing access.** [Permissions](permissions.md) and [Troubleshooting](troubleshooting.md).

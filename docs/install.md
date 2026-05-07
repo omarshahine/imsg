@@ -5,6 +5,9 @@ description: "Install imsg with Homebrew, build it from source, or pin a specifi
 
 `imsg` ships as a signed, notarized universal macOS binary. It runs on macOS 14 (Sonoma) and newer, including macOS 26 (Tahoe).
 
+0.8.0 and newer releases also publish Linux builds as a read-only preview for
+existing Messages databases copied from macOS. See [Linux read-only preview](linux.md).
+
 ## Homebrew
 
 ```bash
@@ -38,6 +41,18 @@ make imsg ARGS="chats --limit 5"
 ```
 
 This is a clean debug rebuild that runs the resulting binary with the supplied arguments.
+
+## Linux read-only preview
+
+Linux support is for reading an existing `chat.db` copied from macOS. It opens
+the database read-only and supports inspection commands such as `chats`,
+`group`, `history`, and `search`.
+
+It does not send messages, react, mark chats read, show typing, launch
+Messages.app, use Contacts, or access iMessage/SMS accounts on Linux. Those
+features depend on macOS frameworks or Messages.app automation.
+
+For setup and copy-safe database commands, see [Linux read-only preview](linux.md).
 
 ## Verify the install
 
