@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 - Unreleased
+## 0.8.0 - 2026-05-08
 
 ### Linux Read-Only Preview
 - feat: add a Linux read-only core build with fixture-backed tests and GitHub
