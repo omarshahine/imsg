@@ -1,11 +1,11 @@
 ---
 name: imsg
-description: Use for local iMessage/SMS archive reads, chat history, watch, and explicitly requested sends.
+description: Use for local iMessage/SMS archive reads, iMessage contact lookup, visible Messages.app contact lookup, chat history, watch, and explicitly requested sends.
 ---
 
 # imsg
 
-Use this for Messages.app history, chat lookup, streaming, and sends. Reading is local DB access; sending uses Messages automation and must be explicitly requested.
+Use this for Messages.app history, chat lookup, streaming, visible UI contact lookup, and sends. Reading is local DB access; sending uses Messages automation and must be explicitly requested.
 
 ## Sources
 
@@ -22,19 +22,21 @@ Check DB access:
 sqlite3 ~/Library/Messages/chat.db 'pragma quick_check;'
 ```
 
-List chats:
+For a visible Messages.app person/name, start with chats. The UI-resolved name usually appears as `contact_name`; it may not appear in `imsg search`, raw `message.text`, or the `handle` table.
 
 ```bash
-imsg chats --json | jq -s
+imsg chats --limit 200 --json | jq -s '.[] | select((.contact_name // .display_name // .name // .identifier // "" | ascii_downcase) | contains("beatrix"))'
 ```
 
-Read a chat:
+Then read the chat by id:
 
 ```bash
 imsg history --chat-id ID --json | jq -s
 ```
 
-Use `--attachments` when attachment metadata matters. Use `--start`/`--end` with absolute timestamps for date-scoped questions.
+Use `imsg search --query ... --json` for message-body search only; do not treat no search hits as proof that a visible UI contact does not exist. Use `--attachments` when attachment metadata matters. Use `--start`/`--end` with absolute timestamps for date-scoped questions.
+
+Direct DB checks are only a fallback. The `handle` table is keyed by phone/email and often lacks the contact display name that `imsg chats` resolves.
 
 ## Sends
 
