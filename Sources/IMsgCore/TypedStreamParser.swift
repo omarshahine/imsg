@@ -38,36 +38,43 @@ enum TypedStreamParser {
   }
 
   /// Strips a typedstream length prefix from `segment` and returns the longest valid UTF-8 decoding.
-  /// Length prefix forms (BER-style): single byte (< 0x80), `0x81 NN`, or `0x82 NN NN`. The older
-  /// implementation only handled the single-byte form, which silently dropped any message longer
-  /// than 127 bytes because the unstripped 0x81/0x82 byte is invalid as a UTF-8 leading byte.
+  /// Length prefix forms (BER-style): single byte (< 0x80), `0x81 NN`, or `0x82 NN NN`.
+  /// Structured prefixes always win over the raw `prefixLen = 0` decode: otherwise, when the
+  /// length byte is itself a printable-ASCII character (body length 32–126), the unstripped decode
+  /// produces an N+1 character string that beats the correct N-character body.
   private static func decodeSegment(_ segment: [UInt8]) -> String {
     guard let first = segment.first else { return "" }
 
-    var prefixLengths: Set<Int> = [0]
+    var structuredPrefixes: [Int] = []
     if first < 0x80, Int(first) == segment.count - 1 {
-      prefixLengths.insert(1)
+      structuredPrefixes.append(1)
     }
     if first == 0x81, segment.count >= 2 {
-      prefixLengths.insert(2)
+      structuredPrefixes.append(2)
     }
     if first == 0x82, segment.count >= 3 {
-      prefixLengths.insert(3)
+      structuredPrefixes.append(3)
     }
 
-    var best = ""
-    for prefixLen in prefixLengths {
-      guard prefixLen <= segment.count else { continue }
+    var bestStructured = ""
+    var anyStructuredValid = false
+    for prefixLen in structuredPrefixes {
       let body = Array(segment[prefixLen...])
       guard
         let candidate = String(bytes: body, encoding: .utf8)?
           .trimmingLeadingControlCharacters()
       else { continue }
-      if candidate.count > best.count {
-        best = candidate
+      anyStructuredValid = true
+      if candidate.count > bestStructured.count {
+        bestStructured = candidate
       }
     }
-    return best
+    if anyStructuredValid {
+      return bestStructured
+    }
+
+    return String(bytes: segment, encoding: .utf8)?
+      .trimmingLeadingControlCharacters() ?? ""
   }
 
   private static func findSequence(_ needle: [UInt8], in haystack: [UInt8], from start: Int)

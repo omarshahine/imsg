@@ -238,6 +238,45 @@ func typedStreamParserDecodesLongMessageWith0x82Prefix() {
 }
 
 @Test
+func typedStreamParserDoesNotPrependPrintableAsciiLengthByte() {
+  // 64-byte body of 'A' → length byte 0x40 ('@'), printable.
+  // Without the structured-prefix-wins rule, the raw decode keeps the '@' and beats the stripped body by one character.
+  let text = String(repeating: "A", count: 64)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserDecodes32ByteBodyAtLowerRegressionEdge() {
+  // 32-byte body → length byte 0x20 (space). Lower edge of the 32–126 printable-ASCII window.
+  let text = String(repeating: "A", count: 32)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserDecodes126ByteBodyAtUpperRegressionEdge() {
+  // 126-byte body → length byte 0x7E ('~'). Upper edge of the window — 0x7F is DEL/control and
+  // would be trimmed (not prepended), so 0x7E is the precise top of the failure range.
+  let text = String(repeating: "A", count: 126)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserDecodesMultibyteUTF8BodyInRegressionWindow() {
+  // 12 × 🎉 = 48 UTF-8 bytes → length byte 0x30 ('0'), printable. Confirms the structured-prefix
+  // preference works for non-ASCII bodies too — the bug is byte-count driven, not ASCII-specific.
+  let text = String(repeating: "🎉", count: 12)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
 func typedStreamParserHandlesMixedBinaryNoise() {
   // First byte 0x42 is neither 0x81 nor 0x82, and does not equal segment.count - 1 (= 6).
   // The decoder should fall back to no-prefix decoding without crashing.
