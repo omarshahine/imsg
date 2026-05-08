@@ -13,7 +13,7 @@ gh workflow run update-formula.yml \
   --ref main \
   -f formula=imsg \
   -f tag="$TAG" \
-  -f repository=steipete/imsg \
+  -f repository=openclaw/imsg \
   -f macos_artifact=imsg-macos.zip
 
 echo "Homebrew tap update dispatched. Monitor: https://github.com/steipete/homebrew-tap/actions"

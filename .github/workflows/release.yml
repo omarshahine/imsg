@@ -180,7 +180,7 @@ jobs:
             --ref main \
             -f formula=imsg \
             -f tag="$RELEASE_TAG" \
-            -f repository=steipete/imsg \
+            -f repository=openclaw/imsg \
             -f macos_artifact=imsg-macos.zip \
             -f request_id="$request_id"
 
