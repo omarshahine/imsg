@@ -38,7 +38,9 @@ jobs:
 
       - name: Checkout release tag
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: git checkout ${{ steps.tag.outputs.tag }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git checkout ${{ steps.tag.outputs.tag }}
 
       - name: Resolve packages
         run: swift package resolve
@@ -120,7 +122,9 @@ jobs:
 
       - name: Checkout release tag
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: git checkout ${{ steps.tag.outputs.tag }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git checkout ${{ steps.tag.outputs.tag }}
 
       - name: Install Python
         run: |
