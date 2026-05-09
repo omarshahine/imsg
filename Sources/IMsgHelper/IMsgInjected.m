@@ -1297,6 +1297,30 @@ static void dispatchIMMessageInChat(IMChat *chat, id message) {
     [chat performSelector:@selector(sendMessage:) withObject:message];
 }
 
+static unsigned long long flagsForMessagePayload(NSAttributedString *subject,
+                                                 NSArray *fileTransferGuids,
+                                                 BOOL isAudioMessage) {
+    if (isAudioMessage) {
+        return 0x300005ULL;
+    }
+    if (subject.length) {
+        return 0x10000dULL;
+    }
+    if (fileTransferGuids.count > 0) {
+        return 0x100005ULL;
+    }
+    return 0x100005ULL;
+}
+
+static unsigned long long flagsForAssociatedMessagePayload(NSAttributedString *subject,
+                                                           NSArray *fileTransferGuids,
+                                                           BOOL isAudioMessage) {
+    if (fileTransferGuids.count == 0) {
+        return 0x5ULL;
+    }
+    return flagsForMessagePayload(subject, fileTransferGuids, isAudioMessage);
+}
+
 /// Build an IMMessage suitable for `[chat sendMessage:]`. Handles plain text,
 /// optional subject, optional effect (`com.apple.MobileSMS.expressivesend.*`),
 /// optional reply target (`selectedMessageGuid`), and ddScan flag.
@@ -1350,7 +1374,9 @@ static id buildIMMessage(NSAttributedString *body,
         // longer initializer on the result.
         SEL macos26Sel = @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:associatedMessageGUID:associatedMessageType:associatedMessageRange:messageSummaryInfo:);
         if ([messageClass instancesRespondToSelector:macos26Sel]) {
-            unsigned long long flags = 0x5;
+            unsigned long long flags = flagsForAssociatedMessagePayload(subject,
+                                                                        fileTransferGuids,
+                                                                        isAudioMessage);
             id msg = [[messageClass alloc] init];
             NSMethodSignature *sig =
                 [messageClass instanceMethodSignatureForSelector:macos26Sel];
@@ -1376,7 +1402,14 @@ static id buildIMMessage(NSAttributedString *body,
             id result = invokeReturningObject(inv);
             debugLog(@"buildIMMessage: reaction via macos26Sel result=%@",
                      result ? NSStringFromClass([result class]) : @"(nil)");
-            if (result) return result;
+            if (result) {
+                if (threadIdentifier
+                    && [result respondsToSelector:@selector(setThreadIdentifier:)]) {
+                    [result performSelector:@selector(setThreadIdentifier:)
+                                 withObject:threadIdentifier];
+                }
+                return result;
+            }
         }
 
         // Legacy 17-arg form for older macOS.
@@ -1386,7 +1419,9 @@ static id buildIMMessage(NSAttributedString *body,
                  responds, associatedMessageType, associatedMessageGuid);
         id msg = [messageClass alloc];
         if ([msg respondsToSelector:sel]) {
-            unsigned long long flags = 0x5;
+            unsigned long long flags = flagsForAssociatedMessagePayload(subject,
+                                                                        fileTransferGuids,
+                                                                        isAudioMessage);
             NSMethodSignature *sig = [messageClass instanceMethodSignatureForSelector:sel];
             NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
             [inv setSelector:sel];
@@ -1412,6 +1447,11 @@ static id buildIMMessage(NSAttributedString *body,
             [inv invoke];
             __unsafe_unretained id result = nil;
             [inv getReturnValue:&result];
+            if (threadIdentifier
+                && [result respondsToSelector:@selector(setThreadIdentifier:)]) {
+                [result performSelector:@selector(setThreadIdentifier:)
+                             withObject:threadIdentifier];
+            }
             return result;
         }
     }
@@ -1422,14 +1462,8 @@ static id buildIMMessage(NSAttributedString *body,
     // older releases.
     SEL bbSendSel = @selector(initWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:);
     if ([messageClass instancesRespondToSelector:bbSendSel]) {
-        unsigned long long flags;
-        if (isAudioMessage) {
-            flags = 0x300005ULL;
-        } else if (subject.length) {
-            flags = 0x10000dULL;
-        } else {
-            flags = 0x100005ULL;
-        }
+        unsigned long long flags = flagsForMessagePayload(subject, fileTransferGuids,
+                                                          isAudioMessage);
         id m = [[messageClass alloc] init];
         NSMethodSignature *sig = [messageClass instanceMethodSignatureForSelector:bbSendSel];
         NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
@@ -1464,14 +1498,8 @@ static id buildIMMessage(NSAttributedString *body,
     SEL sel = @selector(initIMMessageWithSender:time:text:messageSubject:fileTransferGUIDs:flags:error:guid:subject:balloonBundleID:payloadData:expressiveSendStyleID:);
     id msg = [messageClass alloc];
     if ([msg respondsToSelector:sel]) {
-        unsigned long long flags;
-        if (isAudioMessage) {
-            flags = 0x300005ULL;
-        } else if (subject.length) {
-            flags = 0x10000dULL;
-        } else {
-            flags = 0x100005ULL;
-        }
+        unsigned long long flags = flagsForMessagePayload(subject, fileTransferGuids,
+                                                          isAudioMessage);
         NSMethodSignature *sig = [messageClass instanceMethodSignatureForSelector:sel];
         NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
         [inv setSelector:sel];
@@ -2075,11 +2103,19 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
 static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *params) {
     NSString *chatGuid = params[@"chatGuid"];
     NSString *filePath = params[@"filePath"];
+    NSString *message = params[@"message"];
+    NSString *effectId = params[@"effectId"];
+    NSString *subject = params[@"subject"];
+    NSString *selectedMessageGuid = params[@"selectedMessageGuid"];
+    NSNumber *partIndexNum = params[@"partIndex"];
+    NSInteger partIndex = partIndexNum ? [partIndexNum integerValue] : 0;
     NSNumber *audioFlag = params[@"isAudioMessage"];
     BOOL isAudio = [audioFlag boolValue];
+    NSArray *textFormatting = params[@"textFormatting"];
 
     if (!chatGuid.length) return errorResponse(requestId, @"Missing chatGuid");
     if (!filePath.length) return errorResponse(requestId, @"Missing filePath");
+    if (!message) message = @"";
     NSError *attrErr = nil;
     NSDictionary *attrs = [[NSFileManager defaultManager]
         attributesOfItemAtPath:filePath error:&attrErr];
@@ -2119,19 +2155,58 @@ static NSDictionary *handleSendAttachment(NSInteger requestId, NSDictionary *par
             return errorResponse(requestId, @"Transfer registered without guid");
         }
 
-        NSAttributedString *body = buildAttachmentAttributed(transferGuid, filename, 0);
-        id imMessage = buildIMMessage(body, nil, nil, nil, nil, 0,
+        NSMutableAttributedString *body = [[NSMutableAttributedString alloc] init];
+        NSInteger attachmentPartIndex = partIndex;
+        if (message.length) {
+            NSString *textPrefix = [message stringByAppendingString:@"\n"];
+            NSAttributedString *textBody = nil;
+            if ([textFormatting isKindOfClass:[NSArray class]] && textFormatting.count > 0) {
+                textBody = buildFormattedAttributed(textPrefix, textFormatting, partIndex);
+            } else {
+                textBody = buildPlainAttributed(textPrefix, partIndex);
+            }
+            [body appendAttributedString:textBody];
+            attachmentPartIndex = partIndex + 1;
+        }
+        [body appendAttributedString:buildAttachmentAttributed(transferGuid, filename,
+                                                               attachmentPartIndex)];
+
+        NSAttributedString *subjectAttr = subject.length
+            ? buildPlainAttributed(subject, 0)
+            : nil;
+        long long associatedType = selectedMessageGuid.length ? 100 : 0;
+        id parentMessage = nil;
+        NSString *threadIdentifier = nil;
+        if (selectedMessageGuid.length) {
+            threadIdentifier = deriveThreadIdentifier(selectedMessageGuid, &parentMessage);
+            debugLog(@"handleSendAttachment: parent=%@ threadId=%@",
+                     selectedMessageGuid, threadIdentifier ?: @"(none)");
+        }
+
+        id imMessage = buildIMMessage(body, subjectAttr, effectId, threadIdentifier,
+                                      selectedMessageGuid, associatedType,
                                       NSMakeRange(0, body.length), nil,
                                       @[transferGuid], isAudio, NO);
         if (!imMessage) {
             return errorResponse(requestId, @"Could not build IMMessage with attachment");
+        }
+        if (parentMessage
+            && [imMessage respondsToSelector:@selector(setThreadOriginator:)]) {
+            [imMessage performSelector:@selector(setThreadOriginator:)
+                            withObject:parentMessage];
+        }
+        if (threadIdentifier
+            && [imMessage respondsToSelector:@selector(setThreadIdentifier:)]) {
+            [imMessage performSelector:@selector(setThreadIdentifier:)
+                            withObject:threadIdentifier];
         }
         dispatchIMMessageInChat(chat, imMessage);
         NSString *guid = lastSentMessageGuid(chat);
         return successResponse(requestId, @{
             @"chatGuid": chatGuid,
             @"messageGuid": guid ?: @"",
-            @"transferGuid": transferGuid
+            @"transferGuid": transferGuid,
+            @"selectedMessageGuid": selectedMessageGuid ?: @""
         });
     } @catch (NSException *exception) {
         return errorResponse(requestId,
