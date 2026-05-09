@@ -1916,67 +1916,6 @@ static void retargetPreparedTransfer(id ftc, IMFileTransfer *transfer,
     }
 }
 
-static NSString *saveAttachmentForTransfer(id pac, IMFileTransfer *transfer,
-                                           NSString *chatGuid, NSString **outErr) {
-    SEL saveSel = @selector(saveAttachmentsForTransfer:chatGUID:storeAtExternalLocation:completion:);
-    if (!pac || ![pac respondsToSelector:saveSel]) {
-        return nil;
-    }
-
-    __block BOOL done = NO;
-    __block NSString *savedPath = nil;
-    __block id saveError = nil;
-    // Runtime probe on macOS 26 shows the completion receives:
-    //   primaryPath, error, externalPath
-    // `externalPath` is only populated when `storeAtExternalLocation:YES`.
-    void (^completion)(id, id, id) = ^(id primaryPath, id error, id externalPath) {
-        if ([primaryPath isKindOfClass:[NSString class]] && [(NSString *)primaryPath length]) {
-            savedPath = primaryPath;
-        } else if ([externalPath isKindOfClass:[NSString class]]
-                   && [(NSString *)externalPath length]) {
-            savedPath = externalPath;
-        }
-        saveError = error;
-        done = YES;
-    };
-
-    NSMethodSignature *sig = [pac methodSignatureForSelector:saveSel];
-    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-    [inv setSelector:saveSel];
-    [inv setTarget:pac];
-    __unsafe_unretained IMFileTransfer *xfer = transfer;
-    __unsafe_unretained NSString *cg = chatGuid;
-    BOOL external = chatGuid.length > 0;
-    // Call via NSInvocation because this private selector and block signature
-    // are absent from public SDK headers.
-    [inv setArgument:&xfer atIndex:2];
-    [inv setArgument:&cg atIndex:3];
-    [inv setArgument:&external atIndex:4];
-    [inv setArgument:&completion atIndex:5];
-    [inv retainArguments];
-    [inv invoke];
-
-    // The completion is usually synchronous, but keep the same bounded run-loop
-    // pump used by other bridge helpers in case IMDPersistence hops queues.
-    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:3.0];
-    while (!done && [deadline timeIntervalSinceNow] > 0) {
-        [[NSRunLoop currentRunLoop]
-            runMode:NSDefaultRunLoopMode
-         beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
-    }
-
-    debugLog(@"prepareOutgoingTransfer: saveAttachments path=%@ error=%@ done=%d",
-             savedPath ?: @"(nil)", saveError ?: @"(nil)", done);
-    if (!done) {
-        if (outErr) *outErr = @"Timed out staging attachment";
-        return nil;
-    }
-    if (saveError && outErr) {
-        *outErr = [NSString stringWithFormat:@"Failed to stage attachment: %@", saveError];
-    }
-    return savedPath;
-}
-
 static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *filename,
                                                NSString *chatGuid, NSString **outErr) {
     Class ftcClass = NSClassFromString(@"IMFileTransferCenter");
@@ -2044,44 +1983,59 @@ static IMFileTransfer *prepareOutgoingTransfer(NSURL *originalURL, NSString *fil
             debugLog(@"prepareOutgoingTransfer: persistentPath=%@ filename=%@",
                      persistentPath ?: @"(nil)", fn);
 
+            NSError *legacyErr = nil;
+            BOOL legacyStaged = NO;
             if (persistentPath.length) {
                 NSURL *persistentURL = [NSURL fileURLWithPath:persistentPath];
                 NSURL *parent = [persistentURL URLByDeletingLastPathComponent];
-                NSError *folderErr = nil;
                 [[NSFileManager defaultManager] createDirectoryAtURL:parent
                                          withIntermediateDirectories:YES
                                                           attributes:nil
-                                                               error:&folderErr];
-                if (folderErr) {
-                    if (outErr) *outErr = [NSString stringWithFormat:
-                        @"Failed to create attachment dir: %@", folderErr.localizedDescription];
-                    return nil;
+                                                               error:&legacyErr];
+                if (!legacyErr) {
+                    // If the destination already exists (e.g., re-send of the
+                    // same file), nuke the stale copy so copyItem doesn't fail.
+                    if ([[NSFileManager defaultManager] fileExistsAtPath:persistentPath]) {
+                        [[NSFileManager defaultManager] removeItemAtURL:persistentURL error:NULL];
+                    }
+                    [[NSFileManager defaultManager] copyItemAtURL:originalURL
+                                                            toURL:persistentURL
+                                                            error:&legacyErr];
+                    if (!legacyErr) {
+                        retargetPreparedTransfer(ftc, transfer, transferGuid, persistentPath);
+                        legacyStaged = YES;
+                    }
                 }
-                // If the destination already exists (e.g., re-send of the same
-                // file), nuke the stale copy so copyItem doesn't fail.
-                if ([[NSFileManager defaultManager] fileExistsAtPath:persistentPath]) {
-                    [[NSFileManager defaultManager] removeItemAtURL:persistentURL error:NULL];
-                }
-                NSError *copyErr = nil;
-                [[NSFileManager defaultManager] copyItemAtURL:originalURL
-                                                        toURL:persistentURL
-                                                        error:&copyErr];
-                if (copyErr) {
-                    if (outErr) *outErr = [NSString stringWithFormat:
-                        @"Failed to copy attachment: %@", copyErr.localizedDescription];
-                    return nil;
-                }
-                retargetPreparedTransfer(ftc, transfer, transferGuid, persistentPath);
-            } else {
-                // Newer IMDPersistence builds also expose a block-based save
-                // API. Use it as a fallback when the older path helper refuses
-                // to return a staging path for this transfer.
-                NSString *savedPath = saveAttachmentForTransfer(pac, transfer, chatGuid, outErr);
-                if (savedPath.length) {
-                    retargetPreparedTransfer(ftc, transfer, transferGuid, savedPath);
-                } else if (outErr && !*outErr) {
-                    *outErr = @"Could not stage attachment";
-                    return nil;
+            }
+            if (!legacyStaged) {
+                // IMDPersistence on macOS 26 / Tahoe returns either nil (when
+                // chatGUID is nil, per BlueBubbles' reference implementation)
+                // or an iOS-style /var/mobile/... path (when chatGUID is
+                // non-nil) that Messages.app can't actually write to. The
+                // _alternative_ fallback that some IMDPersistence builds
+                // expose, saveAttachmentsForTransfer:chatGUID:storeAtExternalLocation:completion:,
+                // returns a path inside the Messages.app sandbox container
+                // that imagent can't read from for outgoing sends (the row
+                // lands in chat.db but error=25, is_sent=0).
+                //
+                // The transfer was created via guidForNewOutgoingTransferWithLocalURL:
+                // with the source already living under
+                // ~/Library/Messages/Attachments/imsg/<UUID>/<file> (Swift's
+                // MessageSender.stageAttachmentForMessagesApp puts it there
+                // before we get here). That path is in the user-visible
+                // Attachments tree, which imagent reads happily — BlueBubbles
+                // takes the same approach when its persistentPath comes back
+                // nil. So when the legacy retarget can't run, leave the
+                // transfer pointing at its original localURL and let
+                // registerTransferWithDaemon: pick it up directly.
+                if (legacyErr) {
+                    debugLog(@"prepareOutgoingTransfer: legacy path %@ unusable (%@); "
+                             @"keeping original localURL=%@ for registerTransferWithDaemon",
+                             persistentPath ?: @"(nil)", legacyErr.localizedDescription,
+                             originalURL.path);
+                } else {
+                    debugLog(@"prepareOutgoingTransfer: no persistent path; keeping "
+                             @"original localURL=%@", originalURL.path);
                 }
             }
         }
