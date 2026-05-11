@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.2 - 2026-05-11
+
 ### JSON-RPC
 - fix: keep `imsg rpc` stdout strictly JSONL when startup fails before the
   database opens; Full Disk Access failures now answer the caller's request
