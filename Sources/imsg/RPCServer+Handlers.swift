@@ -405,7 +405,7 @@ extension RPCServer {
       guard text.isEmpty else {
         throw RPCError.invalidParams("bridge transport does not support text and file together")
       }
-      let stagedFile = try MessageSender.stageAttachmentForMessagesApp(at: file)
+      let stagedFile = try stageAttachment(file)
       return try await bridgeInvoker(
         .sendAttachment,
         ["chatGuid": chatGUID, "filePath": stagedFile, "isAudioMessage": false]

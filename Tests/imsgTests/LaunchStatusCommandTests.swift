@@ -39,6 +39,7 @@ func statusCommandProducesJsonOutput() async throws {
     try? await StatusCommand.run(values: values, runtime: runtime)
   }
   // JSON output should contain expected keys
+  #expect(output.contains(#""version":"\#(IMsgVersion.current)""#))
   #expect(output.contains("basic_features"))
   #expect(output.contains("advanced_features"))
 }
@@ -56,4 +57,5 @@ func statusCommandProducesTextOutput() async throws {
     try? await StatusCommand.run(values: values, runtime: runtime)
   }
   #expect(output.contains("imsg Status Report"))
+  #expect(output.contains(IMsgVersion.current))
 }

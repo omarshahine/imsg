@@ -52,6 +52,7 @@ enum StatusCommand {
 
     if runtime.jsonOutput {
       let payload = StatusPayload(
+        version: IMsgVersion.current,
         basicFeatures: true,
         advancedFeatures: availability.available,
         typingIndicators: availability.available,
@@ -67,6 +68,9 @@ enum StatusCommand {
     } else {
       StdoutWriter.writeLine("imsg Status Report")
       StdoutWriter.writeLine("==================")
+      StdoutWriter.writeLine("")
+      StdoutWriter.writeLine("Version:")
+      StdoutWriter.writeLine("  \(IMsgVersion.current)")
       StdoutWriter.writeLine("")
       StdoutWriter.writeLine("Basic features (send, receive, history):")
       StdoutWriter.writeLine("  Available")
@@ -129,6 +133,7 @@ enum StatusCommand {
 }
 
 private struct StatusPayload: Encodable {
+  let version: String
   let basicFeatures: Bool
   let advancedFeatures: Bool
   let typingIndicators: Bool
@@ -141,6 +146,7 @@ private struct StatusPayload: Encodable {
   let rpcMethods: [String]
 
   enum CodingKeys: String, CodingKey {
+    case version
     case basicFeatures = "basic_features"
     case advancedFeatures = "advanced_features"
     case typingIndicators = "typing_indicators"

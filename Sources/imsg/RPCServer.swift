@@ -13,6 +13,8 @@ typealias BridgeInvoker = (
   _ params: [String: Any]
 ) async throws -> [String: Any]
 
+typealias AttachmentStager = (_ path: String) throws -> String
+
 protocol RPCOutput: Sendable {
   func sendResponse(id: Any, result: Any)
   func sendError(id: Any?, error: RPCError)
@@ -20,9 +22,8 @@ protocol RPCOutput: Sendable {
 }
 
 /// Methods exposed by `imsg rpc` over JSON-RPC. Advertised to clients via
-/// `imsg status --json` (`rpc_methods` field) so capability-aware consumers
-/// (like the openclaw imessage channel plugin) can gate features off when
-/// running against an older imsg build that doesn't implement a given method.
+/// `imsg status --json` (`rpc_methods` field) so capability-aware consumers can
+/// inspect the exact surface exposed by the installed binary.
 ///
 /// Keep in sync with the dispatch switch in `RPCServer.handleLine`.
 let kSupportedRPCMethods: [String] = [
@@ -34,8 +35,15 @@ let kSupportedRPCMethods: [String] = [
   "watch.subscribe",
   "watch.unsubscribe",
   "send",
+  "send.rich",
+  "send.attachment",
+  "tapback",
   "typing",
   "read",
+  "message.edit",
+  "message.unsend",
+  "message.delete",
+  "message.notifyAnyways",
   "group.rename",
   "group.setIcon",
   "group.addParticipant",
@@ -53,6 +61,7 @@ final class RPCServer {
   let sendMessage: (MessageSendOptions) throws -> Void
   let resolveSentMessage: SentMessageResolver
   let bridgeInvoker: BridgeInvoker
+  let stageAttachment: AttachmentStager
   let isBridgeReady: () -> Bool
   let startTyping: (String) throws -> Void
   let stopTyping: (String) throws -> Void
@@ -67,6 +76,7 @@ final class RPCServer {
     invokeBridge: @escaping BridgeInvoker = { action, params in
       try await IMsgBridgeClient.shared.invoke(action: action, params: params)
     },
+    stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
     isBridgeReady: @escaping () -> Bool = { IMsgBridgeClient.shared.isReady() },
     startTyping: @escaping (String) throws -> Void = {
       try TypingIndicator.startTyping(chatIdentifier: $0)
@@ -84,6 +94,7 @@ final class RPCServer {
     self.sendMessage = sendMessage
     self.resolveSentMessage = resolveSentMessage
     self.bridgeInvoker = invokeBridge
+    self.stageAttachment = stageAttachment
     self.isBridgeReady = isBridgeReady
     self.startTyping = startTyping
     self.stopTyping = stopTyping
@@ -133,10 +144,24 @@ final class RPCServer {
         try await handleWatchUnsubscribe(id: id, params: params)
       case "send":
         try await handleSend(params: params, id: id)
+      case "send.rich":
+        try await handleSendRich(params: params, id: id)
+      case "send.attachment":
+        try await handleSendAttachment(params: params, id: id)
+      case "tapback":
+        try await handleTapback(params: params, id: id)
       case "typing":
         try await handleTyping(params: params, id: id)
       case "read":
         try await handleRead(params: params, id: id)
+      case "message.edit":
+        try await handleMessageEdit(params: params, id: id)
+      case "message.unsend":
+        try await handleMessageUnsend(params: params, id: id)
+      case "message.delete":
+        try await handleMessageDelete(params: params, id: id)
+      case "message.notifyAnyways":
+        try await handleMessageNotifyAnyways(params: params, id: id)
       case "chats.create":
         try await handleChatsCreate(id: id, params: params)
       case "chats.delete":

@@ -2,6 +2,9 @@
 
 ## 0.8.3 - Unreleased
 
+### JSON-RPC
+- feat: expose bridge-backed message RPC methods for rich sends, attachments, tapbacks, edits, unsends, deletes, and notify-anyways; include the CLI version in `imsg status --json` so callers can gate newer RPC action surfaces.
+
 ### Private API Bridge
 - fix: support threaded attachment replies via `send-rich --file` and
   `send-attachment --reply-to`, including the macOS 26 attachment staging

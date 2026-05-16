@@ -124,6 +124,24 @@ Result:
 
 For chat-target sends, `send` also performs the [Tahoe ghost-row check](send.md#tahoe-ghost-row-protection): if Messages writes an empty unjoined SMS row instead of delivering, the call returns an error rather than `{"ok": true}`.
 
+### Bridge Message Actions
+
+These methods require the IMCore bridge and target an existing chat with `chat_id`, `chat_identifier`, or `chat_guid`.
+
+- `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`.
+- `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`.
+- `tapback` sends or removes a reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove`.
+- `message.edit` edits `message_id` / `message_guid` with `text`.
+- `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
+
+Result:
+
+```json
+{ "ok": true }
+```
+
+`send.rich` and `send.attachment` return `guid` / `message_id` when the bridge reports the sent message GUID.
+
 ## Objects
 
 ### Chat
